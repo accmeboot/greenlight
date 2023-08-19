@@ -184,12 +184,23 @@ func (app *application) listMoviesHandler(w http.ResponseWriter, r *http.Request
 
 	DTO.Filters.Page = app.readInt(qs, "page", 1, v)
 	DTO.Filters.PageSize = app.readInt(qs, "page_size", 20, v)
-	DTO.Filters.Sort = app.readString(qs, "sort", "id")
 
-	if !v.Valid() {
+	DTO.Filters.Sort = app.readString(qs, "sort", "id")
+	DTO.Filters.SortSafelist = []string{"id", "title", "year", "runtime", "-id", "-title"}
+
+	if data.ValidateFilters(v, DTO.Filters); !v.Valid() {
 		app.failedValidationResponse(w, r, v.Errors)
 		return
 	}
 
-	fmt.Fprintf(w, "%+v\n", DTO)
+	movies, err := app.models.Movies.GetAll(DTO.Title, DTO.Genres, DTO.Filters)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	err = app.writeJSON(w, http.StatusOK, envelope{"movies": movies}, nil)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+	}
 }
