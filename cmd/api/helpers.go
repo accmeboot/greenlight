@@ -4,11 +4,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/julienschmidt/httprouter"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/accmeboot/greenlight/internal/validator"
+	"github.com/julienschmidt/httprouter"
 )
 
 type envelope map[string]any
@@ -45,6 +48,7 @@ func (app *application) writeJSON(w http.ResponseWriter, status int, data envelo
 
 	return nil
 }
+
 func (app *application) readJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 	maxBytes := 1_048_576 // 1mb
 	r.Body = http.MaxBytesReader(w, r.Body, int64(maxBytes))
@@ -89,4 +93,41 @@ func (app *application) readJSON(w http.ResponseWriter, r *http.Request, dst any
 	}
 
 	return nil
+}
+
+func (app *application) readString(qs url.Values, key string, defaultValue string) string {
+	s := qs.Get(key)
+
+	if s == "" {
+		return defaultValue
+	}
+
+	return s
+}
+
+func (app *application) readCSV(qs url.Values, key string, defaultValue []string) []string {
+	csv := qs.Get(key)
+
+	if csv == "" {
+		return defaultValue
+	}
+
+	return strings.Split(csv, ",")
+}
+
+func (app *application) readInt(qs url.Values, key string, defaultValue int, v *validator.Validator) int {
+	s := qs.Get(key)
+
+	if s == "" {
+		return defaultValue
+	}
+
+	i, err := strconv.Atoi(s)
+	if err != nil {
+		v.AddError(key, "must be an integer value")
+
+		return defaultValue
+	}
+
+	return i
 }

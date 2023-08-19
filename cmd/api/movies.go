@@ -128,8 +128,15 @@ func (app *application) updateMovieHandler(w http.ResponseWriter, r *http.Reques
 
 	err = app.models.Movies.Update(movie)
 	if err != nil {
-		app.serverErrorResponse(w, r, err)
+		switch {
+		case errors.Is(err, data.ErrEditConflict):
+			app.editConflictResponse(w, r)
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+		return
 	}
+
 	err = app.writeJSON(w, http.StatusOK, envelope{"movie": movie}, nil)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
@@ -159,4 +166,30 @@ func (app *application) deleteMovieHandler(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 	}
+}
+
+func (app *application) listMoviesHandler(w http.ResponseWriter, r *http.Request) {
+	var DTO struct {
+		Title  string
+		Genres []string
+		data.Filters
+	}
+
+	v := validator.New()
+
+	qs := r.URL.Query()
+
+	DTO.Title = app.readString(qs, "title", "")
+	DTO.Genres = app.readCSV(qs, "genres", []string{})
+
+	DTO.Filters.Page = app.readInt(qs, "page", 1, v)
+	DTO.Filters.PageSize = app.readInt(qs, "page_size", 20, v)
+	DTO.Filters.Sort = app.readString(qs, "sort", "id")
+
+	if !v.Valid() {
+		app.failedValidationResponse(w, r, v.Errors)
+		return
+	}
+
+	fmt.Fprintf(w, "%+v\n", DTO)
 }
