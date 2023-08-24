@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/accmeboot/greenlight/internal/validator"
@@ -71,29 +73,32 @@ func (m MovieModel) Get(id int64) (*Movie, error) {
 	return &movie, nil
 }
 
-func (m MovieModel) GetAll(title string, genres []string, filters Filters) ([]*Movie, error) {
-	query := `SELECT id, created_at, title, year, runtime, genres, version
-						FROM movies
-						WHERE (LOWER(title) = LOWER($1) OR $1 = '')
-						AND (genres @> $2 OR $2 = '{}')
-						ORDER BY id`
-
+func (m MovieModel) GetAll(title string, genres []string, filters Filters) ([]*Movie, Metadata, error) {
+	query := strings.Join([]string{
+		`SELECT count(*) OVER(), id, created_at, title, year, runtime, genres, version FROM movies`,
+		`WHERE (to_tsvector('simple', title) @@ plainto_tsquery('simple', $1) OR $1 = '')`,
+		`AND (genres @> $2 OR $2 = '{}')`,
+		fmt.Sprintf(`ORDER BY %s %s, id ASC`, filters.sortColumn(), filters.sortDirection()),
+		`LIMIT $3 OFFSET $4`,
+	}, " ")
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	rows, err := m.DB.QueryContext(ctx, query, title, pq.Array(genres))
+	rows, err := m.DB.QueryContext(ctx, query, title, pq.Array(genres), filters.limit(), filters.offset())
 	if err != nil {
-		return nil, err
+		return nil, Metadata{}, err
 	}
 
 	defer rows.Close()
 
-	movies := []*Movie{}
+	totalRecords := 0
+	var movies []*Movie
 
 	for rows.Next() {
 		var movie Movie
 
 		err := rows.Scan(
+			&totalRecords,
 			&movie.ID,
 			&movie.CreatedAt,
 			&movie.Title,
@@ -104,23 +109,25 @@ func (m MovieModel) GetAll(title string, genres []string, filters Filters) ([]*M
 		)
 
 		if err != nil {
-			return nil, err
+			return nil, Metadata{}, err
 		}
 
 		movies = append(movies, &movie)
 	}
 
 	if err = rows.Err(); err != nil {
-		return nil, err
+		return nil, Metadata{}, err
 	}
 
-	return movies, nil
+	metadata := calculateMetadata(totalRecords, filters.Page, filters.PageSize)
+
+	return movies, metadata, nil
 }
 
 func (m MovieModel) Update(movie *Movie) error {
 	query := `UPDATE movies
 			  		SET title = $1, year = $2, runtime = $3, genres = $4, version = version + 1
-			  		WHERE id = $5 AND varsion = $6
+			  		WHERE id = $5 AND version = $6
 			  		RETURNING version`
 
 	args := []any{
