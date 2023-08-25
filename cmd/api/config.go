@@ -3,12 +3,14 @@ package main
 import (
 	"flag"
 	"os"
+	"strings"
 )
 
 type config struct {
 	port int
 	env  string
-	db   struct {
+
+	db struct {
 		dsn          string
 		maxOpenConns int
 		maxIdleConns int
@@ -20,12 +22,17 @@ type config struct {
 		burst   int
 		enabled bool
 	}
+
 	smtp struct {
 		host     string
 		port     int
 		username string
 		password string
 		sender   string
+	}
+
+	cors struct {
+		trustedOrigins []string
 	}
 }
 
@@ -49,6 +56,11 @@ func (c *config) Parse() {
 	flag.StringVar(&c.smtp.username, "smtp-username", "8d564615350280", "SMTP username")
 	flag.StringVar(&c.smtp.password, "smtp-password", "0c0a2366e54055", "SMTP password")
 	flag.StringVar(&c.smtp.sender, "smtp-sender", "Greenlight <no-reply@greenlight.accme.net>", "SMTP sender")
+
+	flag.Func("cors-trusted-origins", "Trusted CORS origins (space separated)", func(val string) error {
+		c.cors.trustedOrigins = strings.Fields(val)
+		return nil
+	})
 
 	flag.Parse()
 }
